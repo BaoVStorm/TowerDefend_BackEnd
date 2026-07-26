@@ -6,8 +6,11 @@ const chests_1 = require("./modules/chests");
 const battle_1 = require("./modules/battle");
 let InitModule = function (ctx, logger, nk, initializer) {
     logger.info("Nakama Module Init!");
-    // Đăng ký Hook chạy sau khi người dùng đăng nhập bằng DeviceID
-    initializer.registerAfterAuthenticateDevice(afterAuthenticateDevice);
+    // Đăng ký Hooks cho tất cả các phương thức đăng nhập
+    initializer.registerAfterAuthenticateDevice(afterAuthenticate);
+    initializer.registerAfterAuthenticateEmail(afterAuthenticate);
+    initializer.registerAfterAuthenticateGoogle(afterAuthenticate);
+    initializer.registerAfterAuthenticateApple(afterAuthenticate);
     // Economy
     initializer.registerRpc("rpc_claim_daily_reward", economy_1.rpcClaimDailyReward);
     initializer.registerRpc("rpc_sync_login", economy_1.rpcSyncLogin);
@@ -23,7 +26,7 @@ let InitModule = function (ctx, logger, nk, initializer) {
     initializer.registerRpc("rpc_battle_end", battle_1.rpcBattleEnd);
     initializer.registerRpc("rpc_match_start", battle_1.rpcMatchStart);
 };
-function afterAuthenticateDevice(ctx, logger, nk, data, request) {
+function afterAuthenticate(ctx, logger, nk, data, request) {
     if (!ctx.userId)
         return;
     let objects = nk.storageRead([{ collection: "profile", key: "stats", userId: ctx.userId }]);

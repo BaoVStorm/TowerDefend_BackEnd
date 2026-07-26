@@ -6,8 +6,11 @@ import { rpcUpdateQuestProgress, rpcClaimQuest, rpcBattleEnd, rpcMatchStart } fr
 let InitModule: nkruntime.InitModule = function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, initializer: nkruntime.Initializer) {
     logger.info("Nakama Module Init!");
 
-    // Đăng ký Hook chạy sau khi người dùng đăng nhập bằng DeviceID
-    initializer.registerAfterAuthenticateDevice(afterAuthenticateDevice);
+    // Đăng ký Hooks cho tất cả các phương thức đăng nhập
+    initializer.registerAfterAuthenticateDevice(afterAuthenticate);
+    initializer.registerAfterAuthenticateEmail(afterAuthenticate);
+    initializer.registerAfterAuthenticateGoogle(afterAuthenticate);
+    initializer.registerAfterAuthenticateApple(afterAuthenticate);
 
     // Economy
     initializer.registerRpc("rpc_claim_daily_reward", rpcClaimDailyReward);
@@ -28,7 +31,7 @@ let InitModule: nkruntime.InitModule = function (ctx: nkruntime.Context, logger:
     initializer.registerRpc("rpc_match_start", rpcMatchStart);
 }
 
-function afterAuthenticateDevice(ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, data: nkruntime.Session, request: nkruntime.AuthenticateDeviceRequest) {
+function afterAuthenticate(ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, data: nkruntime.Session, request: any) {
     if (!ctx.userId) return;
 
     let objects = nk.storageRead([{ collection: "profile", key: "stats", userId: ctx.userId }]);
