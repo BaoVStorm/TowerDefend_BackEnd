@@ -95,3 +95,24 @@ export function rpcBattleEnd(ctx: nkruntime.Context, logger: nkruntime.Logger, n
 
     return JSON.stringify({ success: true, coins: earnedGold, stars: earnedStars, chestDropped: chestDropped });
 }
+
+export function rpcMatchStart(ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
+    if (!ctx.userId) throw Error("Requires authentication.");
+
+    let objects = nk.storageRead([{ collection: "profile", key: "energy", userId: ctx.userId }]);
+    let energyState: any = { energy: 100, lastEnergyUpdateTime: Date.now() };
+    if (objects.length > 0) energyState = objects[0].value;
+
+    if (energyState.energy < 10) {
+        throw Error("Not enough energy.");
+    }
+
+    energyState.energy -= 10;
+    if (energyState.energy >= 90) { // If it was maxed, start timer now
+        energyState.lastEnergyUpdateTime = Date.now();
+    }
+    
+    nk.storageWrite([{ collection: "profile", key: "energy", userId: ctx.userId, value: energyState }]);
+
+    return JSON.stringify({ success: true, energy: energyState.energy });
+}

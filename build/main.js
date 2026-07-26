@@ -10,6 +10,7 @@ let InitModule = function (ctx, logger, nk, initializer) {
     initializer.registerAfterAuthenticateDevice(afterAuthenticateDevice);
     // Economy
     initializer.registerRpc("rpc_claim_daily_reward", economy_1.rpcClaimDailyReward);
+    initializer.registerRpc("rpc_sync_login", economy_1.rpcSyncLogin);
     initializer.registerRpc("rpc_sync_energy", economy_1.rpcSyncEnergy);
     // Inventory
     initializer.registerRpc("rpc_upgrade_card", inventory_1.rpcUpgradeCard);
@@ -20,6 +21,7 @@ let InitModule = function (ctx, logger, nk, initializer) {
     initializer.registerRpc("rpc_update_quest_progress", battle_1.rpcUpdateQuestProgress);
     initializer.registerRpc("rpc_claim_quest", battle_1.rpcClaimQuest);
     initializer.registerRpc("rpc_battle_end", battle_1.rpcBattleEnd);
+    initializer.registerRpc("rpc_match_start", battle_1.rpcMatchStart);
 };
 function afterAuthenticateDevice(ctx, logger, nk, data, request) {
     if (!ctx.userId)

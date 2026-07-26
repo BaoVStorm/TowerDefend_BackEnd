@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.rpcClaimDailyReward = rpcClaimDailyReward;
+exports.rpcSyncLogin = rpcSyncLogin;
 exports.rpcSyncEnergy = rpcSyncEnergy;
 function rpcClaimDailyReward(ctx, logger, nk, payload) {
     if (!ctx.userId)
@@ -13,12 +14,53 @@ function rpcClaimDailyReward(ctx, logger, nk, payload) {
     if (dailyState.hasClaimedDailyReward) {
         throw Error("Already claimed today.");
     }
-    // Give rewards based on consecutiveLoginDays (simplified)
+    // Give rewards based on consecutiveLoginDays
     let coinsReward = 100 + (dailyState.consecutiveLoginDays * 10);
     nk.walletUpdate(ctx.userId, { coins: coinsReward }, { "source": "daily_reward" }, true);
     dailyState.hasClaimedDailyReward = true;
     nk.storageWrite([{ collection: "daily_state", key: "login", userId: ctx.userId, value: dailyState }]);
     return JSON.stringify({ success: true, coins: coinsReward });
+}
+function rpcSyncLogin(ctx, logger, nk, payload) {
+    if (!ctx.userId)
+        throw Error("Requires authentication.");
+    let objects = nk.storageRead([{ collection: "daily_state", key: "login", userId: ctx.userId }]);
+    let dailyState = { lastLoginDate: "", consecutiveLoginDays: 0, hasClaimedDailyReward: false };
+    if (objects.length > 0)
+        dailyState = objects[0].value;
+    let today = new Date().toISOString().split('T')[0];
+    if (dailyState.lastLoginDate !== today) {
+        if (!dailyState.lastLoginDate) {
+            dailyState.consecutiveLoginDays = 1;
+        }
+        else {
+            let lastDate = new Date(dailyState.lastLoginDate);
+            let todayDate = new Date(today);
+            let diffDays = Math.floor((todayDate.getTime() - lastDate.getTime()) / (1000 * 3600 * 24));
+            if (diffDays === 1) {
+                dailyState.consecutiveLoginDays++;
+                if (dailyState.consecutiveLoginDays > 7)
+                    dailyState.consecutiveLoginDays = 1;
+            }
+            else if (diffDays > 1) {
+                dailyState.consecutiveLoginDays = 1;
+            }
+        }
+        dailyState.lastLoginDate = today;
+        dailyState.hasClaimedDailyReward = false;
+        // Reset daily quests here
+        let questObjects = nk.storageRead([{ collection: "daily_state", key: "quests", userId: ctx.userId }]);
+        if (questObjects.length > 0) {
+            let quests = questObjects[0].value;
+            quests.dailyEnemiesKilled = 0;
+            quests.dailyTurretsUpgraded = 0;
+            quests.hasClaimedQuest1 = false;
+            quests.hasClaimedQuest2 = false;
+            nk.storageWrite([{ collection: "daily_state", key: "quests", userId: ctx.userId, value: quests }]);
+        }
+        nk.storageWrite([{ collection: "daily_state", key: "login", userId: ctx.userId, value: dailyState }]);
+    }
+    return JSON.stringify({ success: true, state: dailyState });
 }
 function rpcSyncEnergy(ctx, logger, nk, payload) {
     if (!ctx.userId)

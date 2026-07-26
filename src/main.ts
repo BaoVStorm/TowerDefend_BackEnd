@@ -1,7 +1,7 @@
-import { rpcClaimDailyReward, rpcSyncEnergy } from "./modules/economy";
+import { rpcClaimDailyReward, rpcSyncLogin, rpcSyncEnergy } from "./modules/economy";
 import { rpcUpgradeCard, rpcEquipDeck } from "./modules/inventory";
 import { rpcChestAction } from "./modules/chests";
-import { rpcUpdateQuestProgress, rpcClaimQuest, rpcBattleEnd } from "./modules/battle";
+import { rpcUpdateQuestProgress, rpcClaimQuest, rpcBattleEnd, rpcMatchStart } from "./modules/battle";
 
 let InitModule: nkruntime.InitModule = function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, initializer: nkruntime.Initializer) {
     logger.info("Nakama Module Init!");
@@ -11,6 +11,7 @@ let InitModule: nkruntime.InitModule = function (ctx: nkruntime.Context, logger:
 
     // Economy
     initializer.registerRpc("rpc_claim_daily_reward", rpcClaimDailyReward);
+    initializer.registerRpc("rpc_sync_login", rpcSyncLogin);
     initializer.registerRpc("rpc_sync_energy", rpcSyncEnergy);
 
     // Inventory
@@ -24,6 +25,7 @@ let InitModule: nkruntime.InitModule = function (ctx: nkruntime.Context, logger:
     initializer.registerRpc("rpc_update_quest_progress", rpcUpdateQuestProgress);
     initializer.registerRpc("rpc_claim_quest", rpcClaimQuest);
     initializer.registerRpc("rpc_battle_end", rpcBattleEnd);
+    initializer.registerRpc("rpc_match_start", rpcMatchStart);
 }
 
 function afterAuthenticateDevice(ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, data: nkruntime.Session, request: nkruntime.AuthenticateDeviceRequest) {
