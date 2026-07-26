@@ -1,190 +1,73 @@
-function InitModule(ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, initializer: nkruntime.Initializer) {
-    logger.info("TowerDefend Nakama Module Loaded.");
+import { rpcClaimDailyReward, rpcSyncEnergy } from "./modules/economy";
+import { rpcUpgradeCard, rpcEquipDeck } from "./modules/inventory";
+import { rpcChestAction } from "./modules/chests";
+import { rpcUpdateQuestProgress, rpcClaimQuest, rpcBattleEnd } from "./modules/battle";
 
-    initializer.registerRpc("rpc_gacha_roll", rpcGachaRoll);
-    initializer.registerRpc("rpc_tech_unlock", rpcTechUnlock);
-    initializer.registerRpc("rpc_deck_equip", rpcDeckEquip);
-    initializer.registerRpc("rpc_match_start", rpcMatchStart);
-    initializer.registerRpc("rpc_match_end", rpcMatchEnd);
+let InitModule: nkruntime.InitModule = function (ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, initializer: nkruntime.Initializer) {
+    logger.info("Nakama Module Init!");
 
+    // Đăng ký Hook chạy sau khi người dùng đăng nhập bằng DeviceID
     initializer.registerAfterAuthenticateDevice(afterAuthenticateDevice);
-}
 
-// --------------------------------------------------------
-// HOOKS
-// --------------------------------------------------------
+    // Economy
+    initializer.registerRpc("rpc_claim_daily_reward", rpcClaimDailyReward);
+    initializer.registerRpc("rpc_sync_energy", rpcSyncEnergy);
+
+    // Inventory
+    initializer.registerRpc("rpc_upgrade_card", rpcUpgradeCard);
+    initializer.registerRpc("rpc_equip_deck", rpcEquipDeck);
+
+    // Chests
+    initializer.registerRpc("rpc_chest_action", rpcChestAction);
+
+    // Battle
+    initializer.registerRpc("rpc_update_quest_progress", rpcUpdateQuestProgress);
+    initializer.registerRpc("rpc_claim_quest", rpcClaimQuest);
+    initializer.registerRpc("rpc_battle_end", rpcBattleEnd);
+}
 
 function afterAuthenticateDevice(ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, data: nkruntime.Session, request: nkruntime.AuthenticateDeviceRequest) {
-    // Tự động khởi tạo dữ liệu tân thủ nếu là tài khoản mới
-    if (data.created) {
-        let initialProfile = {
+    if (!ctx.userId) return;
+
+    let objects = nk.storageRead([{ collection: "profile", key: "stats", userId: ctx.userId }]);
+    
+    if (objects.length === 0) {
+        logger.info("Khởi tạo dữ liệu người chơi mới cho UserID: " + ctx.userId);
+
+        // Khởi tạo Ví (Wallet)
+        nk.walletUpdate(ctx.userId, { coins: 1000, gems: 100 }, { "source": "initial_bonus" }, true);
+
+        // Khởi tạo Profile
+        let stats = {
             accountLevel: 1,
             exp: 0,
-            coins: 500,
-            gems: 100,
-            energy: 100,
-            lastEnergyUpdateTime: Date.now(),
-            totalStars: 0,
-            unlockedTechNodes: [],
-            equippedCards: ["Turret_Basic", "Turret_Laser", "Block_Basic", "Block_Economy"],
-            cardProgresses: [
-                { cardId: "Turret_Basic", shards: 0, level: 1, isUnlocked: true },
-                { cardId: "Turret_Laser", shards: 0, level: 1, isUnlocked: true },
-                { cardId: "Block_Basic", shards: 0, level: 1, isUnlocked: true },
-                { cardId: "Block_Economy", shards: 0, level: 1, isUnlocked: true }
-            ]
+            currentStage: 1,
+            totalStars: 0
         };
+        nk.storageWrite([{ collection: "profile", key: "stats", userId: ctx.userId, value: stats }]);
 
-        nk.storageWrite([
-            {
-                collection: "Profile",
-                key: "MetaSaveData",
-                userId: ctx.userId,
-                value: initialProfile,
-                permissionRead: 1,
-                permissionWrite: 0 // Client không được ghi đè, chỉ đọc
-            }
-        ]);
-        logger.info(`Đã khởi tạo dữ liệu tân thủ cho User: ${ctx.userId}`);
+        // Khởi tạo Energy
+        let energyState = { energy: 100, lastEnergyUpdateTime: Date.now() };
+        nk.storageWrite([{ collection: "profile", key: "energy", userId: ctx.userId, value: energyState }]);
+
+        // Khởi tạo Inventory (Cards)
+        let cards: any = {};
+        cards["Turret_Archer"] = { shards: 10, level: 1, isUnlocked: true };
+        nk.storageWrite([{ collection: "inventory", key: "cards", userId: ctx.userId, value: cards }]);
+
+        // Khởi tạo Deck
+        let deck = { equipped: ["Turret_Archer"] };
+        nk.storageWrite([{ collection: "inventory", key: "deck", userId: ctx.userId, value: deck }]);
+
+        // Khởi tạo Chests
+        let chests = { slots: [{isEmpty:true}, {isEmpty:true}, {isEmpty:true}, {isEmpty:true}] };
+        nk.storageWrite([{ collection: "daily_state", key: "chests", userId: ctx.userId, value: chests }]);
+
+        // Khởi tạo Quests & Login
+        let quests = { dailyEnemiesKilled: 0, dailyTurretsUpgraded: 0, hasClaimedQuest1: false, hasClaimedQuest2: false };
+        nk.storageWrite([{ collection: "daily_state", key: "quests", userId: ctx.userId, value: quests }]);
+
+        let login = { lastLoginDate: "", consecutiveLoginDays: 0, hasClaimedDailyReward: false };
+        nk.storageWrite([{ collection: "daily_state", key: "login", userId: ctx.userId, value: login }]);
     }
-}
-
-// --------------------------------------------------------
-// RPCs
-// --------------------------------------------------------
-
-function rpcGachaRoll(ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
-    if (!ctx.userId) throw Error("Yêu cầu đăng nhập.");
-    
-    // Đọc data từ storage
-    let objects = nk.storageRead([{ collection: "Profile", key: "MetaSaveData", userId: ctx.userId }]);
-    if (objects.length === 0) throw Error("Không tìm thấy dữ liệu Profile.");
-
-    let profile = objects[0].value;
-    let cost = 100; // 100 gems cho 1 roll
-
-    if (profile.gems < cost) {
-        throw Error("Không đủ Kim Cương.");
-    }
-
-    // Trừ tiền
-    profile.gems -= cost;
-
-    // TODO: Bốc thăm ngẫu nhiên thẻ (Server-side logic để chống hack)
-    let wonCardId = "Turret_Sniper"; 
-    let wonShards = 10;
-
-    // Cập nhật Inventory
-    let found = false;
-    for (let c of profile.cardProgresses) {
-        if (c.cardId === wonCardId) {
-            c.shards += wonShards;
-            if (c.shards >= 10 && !c.isUnlocked) c.isUnlocked = true;
-            found = true;
-            break;
-        }
-    }
-    if (!found) {
-        profile.cardProgresses.push({ cardId: wonCardId, shards: wonShards, level: 1, isUnlocked: true });
-    }
-
-    // Lưu lại
-    nk.storageWrite([
-        {
-            collection: "Profile",
-            key: "MetaSaveData",
-            userId: ctx.userId,
-            value: profile,
-            version: objects[0].version
-        }
-    ]);
-
-    return JSON.stringify({
-        success: true,
-        rewardId: wonCardId,
-        rewardShards: wonShards,
-        remainingGems: profile.gems
-    });
-}
-
-function rpcTechUnlock(ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
-    if (!ctx.userId) throw Error("Yêu cầu đăng nhập.");
-    let args = JSON.parse(payload);
-    let nodeId = args.nodeId;
-    let cost = args.cost; // Trong thực tế, Server nên tự check cost từ config để chống hack
-
-    let objects = nk.storageRead([{ collection: "Profile", key: "MetaSaveData", userId: ctx.userId }]);
-    let profile = objects[0].value;
-
-    if (profile.totalStars < cost) throw Error("Không đủ Sao.");
-    if (profile.unlockedTechNodes.indexOf(nodeId) !== -1) throw Error("Kỹ năng đã được mở khóa.");
-
-    profile.totalStars -= cost;
-    profile.unlockedTechNodes.push(nodeId);
-
-    nk.storageWrite([{ collection: "Profile", key: "MetaSaveData", userId: ctx.userId, value: profile, version: objects[0].version }]);
-    return JSON.stringify({ success: true, remainingStars: profile.totalStars });
-}
-
-function rpcDeckEquip(ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
-    if (!ctx.userId) throw Error("Yêu cầu đăng nhập.");
-    let args = JSON.parse(payload);
-    let newDeck = args.equippedCards; // Array of string
-
-    if (newDeck.length > 8) throw Error("Deck vượt quá 8 thẻ.");
-
-    let objects = nk.storageRead([{ collection: "Profile", key: "MetaSaveData", userId: ctx.userId }]);
-    let profile = objects[0].value;
-
-    // Validate if user actually owns these cards
-    for (let cId of newDeck) {
-        let owns = profile.cardProgresses.some((p: any) => p.cardId === cId && p.isUnlocked);
-        if (!owns) throw Error("Cố tình trang bị thẻ chưa sở hữu: " + cId);
-    }
-
-    profile.equippedCards = newDeck;
-
-    nk.storageWrite([{ collection: "Profile", key: "MetaSaveData", userId: ctx.userId, value: profile, version: objects[0].version }]);
-    return JSON.stringify({ success: true });
-}
-
-function rpcMatchStart(ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
-    if (!ctx.userId) throw Error("Yêu cầu đăng nhập.");
-    let args = JSON.parse(payload);
-    let cost = args.energyCost || 10;
-
-    let objects = nk.storageRead([{ collection: "Profile", key: "MetaSaveData", userId: ctx.userId }]);
-    let profile = objects[0].value;
-
-    if (profile.energy < cost) throw Error("Không đủ thể lực.");
-    
-    profile.energy -= cost;
-    profile.lastEnergyUpdateTime = Date.now(); // Reset timer if full
-
-    nk.storageWrite([{ collection: "Profile", key: "MetaSaveData", userId: ctx.userId, value: profile, version: objects[0].version }]);
-    return JSON.stringify({ success: true, remainingEnergy: profile.energy });
-}
-
-function rpcMatchEnd(ctx: nkruntime.Context, logger: nkruntime.Logger, nk: nkruntime.Nakama, payload: string): string {
-    if (!ctx.userId) throw Error("Yêu cầu đăng nhập.");
-    let args = JSON.parse(payload);
-    
-    let isWin = args.isWin;
-    let earnedGold = args.earnedGold;
-    let earnedStars = args.earnedStars;
-
-    // TODO: Add Anti-Cheat validation here (e.g., limit max gold per match to 5000)
-    if (earnedGold > 10000) throw Error("Phát hiện nghi vấn Hack Vàng.");
-
-    let objects = nk.storageRead([{ collection: "Profile", key: "MetaSaveData", userId: ctx.userId }]);
-    let profile = objects[0].value;
-
-    profile.coins += earnedGold;
-    profile.totalStars += earnedStars;
-    if (isWin && args.stageIdx > profile.currentStage) {
-        profile.currentStage = args.stageIdx;
-    }
-
-    nk.storageWrite([{ collection: "Profile", key: "MetaSaveData", userId: ctx.userId, value: profile, version: objects[0].version }]);
-    return JSON.stringify({ success: true, coins: profile.coins, stars: profile.totalStars });
 }
